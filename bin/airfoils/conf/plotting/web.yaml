@@ -1,0 +1,12 @@
+width: 3.6
+aspect: 1.4
+dpi: 300
+transparent: false
+use_tex: true
+context: paper
+style: white
+palette: deep
+rasterized: true
+extensions:
+- pdf
+- png

@@ -1,0 +1,20 @@
+defaults:
+  - _self_
+  - foil: base
+  - solver: base
+  - plotting: web
+
+n_samples: 512
+seed: 42
+
+hydra:
+  sweeper:
+    params:
+      acquisition_name: ei,pi,lcb
+  sweep:
+    dir: multirun/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.override_dirname}/${acquisition_name}
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${hydra.job.override_dirname}
+  job:
+    chdir: True

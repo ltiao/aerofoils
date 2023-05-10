@@ -1,0 +1,4 @@
+half_cosine_spacing: true
+training_edge_finite: true
+src_resolution: 150
+trg_resolution:
