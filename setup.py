@@ -12,7 +12,7 @@ with open('HISTORY.rst') as history_file:
 
 requirements = ['Click>=7.0', 'pexpect==4.8', 'joblib==1.2.0',
                 'hydra-core==1.3.2', 
-                'scipy', 'pandas==2.0.1', 'seaborn', 
+                'scipy', 'pandas==2.0.1', 'pyarrow', 'seaborn', 
                 'tqdm']
 
 test_requirements = ['pytest>=3', ]

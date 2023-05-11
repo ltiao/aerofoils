@@ -1,4 +1,7 @@
 half_cosine_spacing: true
 training_edge_finite: true
-src_resolution: 150
+src_resolution: 200
 trg_resolution:
+m: 0.02
+p: 0.2
+t: 0.12

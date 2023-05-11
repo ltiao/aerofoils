@@ -9,6 +9,7 @@ import seaborn as sns
 
 from pathlib import Path
 
+from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
 from joblib import Memory
 from tqdm import tqdm
@@ -19,7 +20,6 @@ from aerofoils.solver import Foil
 
 
 logger = logging.getLogger(__name__)
-memory = Memory("cachedir")
 
 
 def setup_aesthetic(width, height, aspect, dpi, transparent, use_tex, context,
@@ -40,61 +40,22 @@ def setup_aesthetic(width, height, aspect, dpi, transparent, use_tex, context,
     return figsize
 
 
-@memory.cache
-def compute(m, p, t, xt, cfg):
-
-    naca = NACA(m, p, t, finite_trailing_edge=cfg.foil.training_edge_finite)
-    zc, (xl, yl), (xu, yu) = naca(xt)
-
-    x = np.hstack([xu[::-1], xl])
-    y = np.hstack([yu[::-1], yl])
-
-    foil = Foil(x, y)
-
-    with foil(mach=cfg.solver.mach, reynolds=cfg.solver.reynolds, 
-              normalize=cfg.solver.normalize, max_iter=cfg.solver.max_iter,
-              max_retries=cfg.solver.max_retries, timeout=cfg.solver.timeout) as foo:
-
-        new_coords = foo.repanel(cfg.foil.trg_resolution)
-
-        # fig, ax = plt.subplots()
-
-        # ax.plot(xt, zc, alpha=0.8, linewidth=1.0, linestyle="dashed", label="mean camber line")
-
-        # ax.scatter(x, y, s=1.2**2, alpha=0.8, label="original pane endpoints")
-        # ax.scatter(*new_coords.T, s=1.2**2, alpha=0.8, label="pane endpoints")
-
-        # ax.axvline(p, color="tab:gray", alpha=0.8, linewidth=1.0)
-
-        # ax.set_xlim(-0.1, +1.1)
-        # ax.set_ylim(-.3, +.3)
-
-        # ax.legend()
-
-        # plt.tight_layout()
-
-        # for ext in cfg.plotting.extensions:
-        #     path = output_path.joinpath(f"profile_{m*100:.2f}_{p*10:.2f}_{t*100:.2f}_{cfg.plotting.context}_{suffix}.{ext}")
-        #     fig.savefig(path)
-        #     logger.info(f"File saved to '{path}' successfully!")
-
-        # plt.clf()
-
-        frame, metadata, failures = foo.calculate(slice(0., 0.01, 0.05))
-
-    logger.info(foil.coords.shape)
-    logger.info(new_coords.shape)
-
-    return frame, metadata, failures
-
-
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def plot(cfg: DictConfig) -> None:
 
+    original_path = Path(get_original_cwd())
+    # memory = Memory(original_path.joinpath('cachedir'))
+    memory = Memory('cachedir')
+
     output_path = Path.cwd()
+
     width, height = setup_aesthetic(cfg.plotting.width, cfg.plotting.get('height', cfg.plotting.width / cfg.plotting.aspect), cfg.plotting.aspect, cfg.plotting.dpi, cfg.plotting.transparent, cfg.plotting.use_tex, cfg.plotting.context, cfg.plotting.style, cfg.plotting.palette)
     suffix = f"{width*cfg.plotting.dpi:.0f}x{height*cfg.plotting.dpi:.0f}"
-    logger.info(f"output path: {output_path}, suffix: {suffix}")
+    logger.info(f"original path: {original_path}, output path: {output_path}, suffix: {suffix}")
+
+    if Path('result.csv').exists():
+        logger.info("Already processed, skipping...")
+        return
 
     # frames = []
     # for t in np.linspace(0.05, 0.25, 3):
@@ -104,23 +65,70 @@ def plot(cfg: DictConfig) -> None:
     # for m in tqdm(np.linspace(.005, .095, 64)):
     # return
 
-    m_start, m_end = .005, .095
-    p_start, p_end = .05, .95
+    @memory.cache
+    def compute(m, p, t):
 
-    sampler = Halton(d=2, seed=cfg.seed)
+        naca = NACA(m, p, t, finite_trailing_edge=cfg.foil.training_edge_finite)
+        zc, (xl, yl), (xu, yu) = naca(xt)
 
-    U = sampler.random(cfg.n_samples)
-    X = np.empty(shape=(cfg.n_samples, 2))  # len(combo), dim))
+        x = np.hstack([xu[::-1], xl])
+        y = np.hstack([yu[::-1], yl])
 
-    X[:, 0] = m_start + (m_end - m_start) * U[:, 0]
-    X[:, 1] = p_start + (p_end - p_start) * U[:, 1]
+        foil = Foil(x, y)
+
+        with foil(mach=cfg.solver.mach, reynolds=cfg.solver.reynolds, 
+                  normalize=cfg.solver.normalize, max_iter=cfg.solver.max_iter,
+                  max_retries=cfg.solver.max_retries, timeout=cfg.solver.timeout) as foo:
+
+            new_coords = foo.repanel(cfg.foil.trg_resolution)
+
+            # fig, ax = plt.subplots()
+
+            # ax.plot(xt, zc, alpha=0.8, linewidth=1.0, linestyle="dashed", label="mean camber line")
+
+            # ax.scatter(x, y, s=1.2**2, alpha=0.8, label="original pane endpoints")
+            # ax.scatter(*new_coords.T, s=1.2**2, alpha=0.8, label="pane endpoints")
+
+            # ax.axvline(p, color="tab:gray", alpha=0.8, linewidth=1.0)
+
+            # ax.set_xlim(-0.1, +1.1)
+            # ax.set_ylim(-.3, +.3)
+
+            # ax.legend()
+
+            # plt.tight_layout()
+
+            # for ext in cfg.plotting.extensions:
+            #     path = output_path.joinpath(f"profile_{m*100:.2f}_{p*10:.2f}_{t*100:.2f}_{cfg.plotting.context}_{suffix}.{ext}")
+            #     fig.savefig(path)
+            #     logger.info(f"File saved to '{path}' successfully!")
+
+            # plt.clf()
+
+            frame, metadata, failures = foo.calculate(slice(cfg.alpha_start, cfg.alpha_end, cfg.alpha_step))
+
+        logger.info(foil.coords.shape)
+        logger.info(new_coords.shape)
+
+        return frame, metadata, failures
+
+    # m_start, m_end = .005, .095
+    # p_start, p_end = .05, .95
+
+    # sampler = Halton(d=2, seed=cfg.seed)
+
+    # U = sampler.random(cfg.n_samples)
+    # X = np.empty(shape=(cfg.n_samples, 2))  # len(combo), dim))
+
+    # X[:, 0] = m_start + (m_end - m_start) * U[:, 0]
+    # X[:, 1] = p_start + (p_end - p_start) * U[:, 1]
 
     logger.info(f"Mach: {cfg.solver.mach}, "
                 f"Re: {cfg.solver.reynolds}, "
                 f"normalize: {cfg.solver.normalize}, "
-                f"max. iterations {cfg.solver.max_iter}, "
-                f"max. retries {cfg.solver.max_retries}, "
-                f"timeout {cfg.solver.timeout}")
+                f"max. iterations: {cfg.solver.max_iter}, "
+                f"max. retries: {cfg.solver.max_retries}, "
+                f"timeout: {cfg.solver.timeout}")
 
     if cfg.foil.half_cosine_spacing:
         beta = np.linspace(0., np.pi, cfg.foil.src_resolution // 2)
@@ -131,67 +139,70 @@ def plot(cfg: DictConfig) -> None:
     # print(np.mgrid[0.02:0.08:4j, 0.1:0.9:32j, 0.1:0.25:4j].shape)
     # print(np.stack(np.mgrid[0.02:0.08:4j, 0.1:0.9:32j, 0.1:0.25:4j], axis=0).shape)
 
-    X = np.mgrid[0.02:0.09:4j, 0.2:0.9:32j, 0.1:0.25:4j].reshape(3, -1).T
+    # X = np.mgrid[0.02:0.09:16j, 0.2:0.9:32j, 0.1:0.25:4j].reshape(3, -1).T
+    # logger.info(X.shape)
 
-    logger.info(X.shape)
+    # frames = []
+    # for (m, p, t) in tqdm(X):
 
-    frames = []
-    for (m, p, t) in tqdm(X):
+    logger.info(f"m={cfg.foil.m:.2f}; p={cfg.foil.p:.2f}; t={cfg.foil.t:.2f}")
 
-        logger.info(f"m={m:.2f}; p={p:.2f}; t={t:.2f}")
+    # frame, metadata, failures = compute(m, p, t)
+    frame, metadata, failures = compute(cfg.foil.m, cfg.foil.p, cfg.foil.t)
 
-        frame, metadata, failures = compute(m, p, t, xt, cfg)
+    logger.info(f"Failures: {failures}")
+    logger.info(f"Results:\n{frame}")
+    logger.info(f"Metadata:\n{metadata}")
 
-        logger.info(f"Failures: {failures}")
-        logger.info(f"Results:\n{frame}")
-        logger.info(f"Metadata:\n{metadata}")
+    frame.to_parquet('result.parquet.gzip', compression='gzip')
+    frame.to_csv('result.csv')
 
-        frames.append(frame.assign(m=m, p=p, t=t))
+    # frames.append(frame.assign(m=m, p=p, t=t))
 
-    data = pd.concat(frames, axis="index")
-    data.to_parquet('result.parquet.gzip', compression='gzip')
+    # data = pd.concat(frames, axis="index")
+    # data.to_parquet('result.parquet.gzip', compression='gzip')
 
-    data = data.assign(name=data.apply(lambda row: f"{row.m*100:.2f} {row.p*10:.2f} {row.t*100:.2f}", axis="columns"),
-                       lift_drag_ratio=lambda row: row.CL / row.CD) \
-        .rename(columns=dict(x=r'$x$', y=r'$y$', 
-                lift_drag_ratio="lift-to-drag ratio", 
-                m='maximum camber', p='max camber distance', t='thickness'))
+    # data = data.assign(name=data.apply(lambda row: f"{row.m*100:.2f} {row.p*10:.2f} {row.t*100:.2f}", axis="columns"),
+    #                    lift_drag_ratio=lambda row: row.CL / row.CD) \
+    #     .rename(columns=dict(x=r'$x$', y=r'$y$', 
+    #             lift_drag_ratio="lift-to-drag ratio", 
+    #             m='maximum camber', p='max camber distance', t='thickness'))
 
-    logger.info(f"DataFrame:\n{data}")
+    # logger.info(f"DataFrame:\n{data}")
 
-    fig, ax = plt.subplots()
+    # fig, ax = plt.subplots()
 
-    sns.scatterplot(x='alpha', y='lift-to-drag ratio',
-                    hue='name',  # palette='crest',
-                    # units='name', estimator=None,
-                    # sort=False, 
-                    data=data, ax=ax)
+    # sns.scatterplot(x='alpha', y='lift-to-drag ratio',
+    #                 hue='name',  # palette='crest',
+    #                 # units='name', estimator=None,
+    #                 # sort=False, 
+    #                 data=data, ax=ax)
 
-    plt.tight_layout()
+    # plt.tight_layout()
 
-    for ext in cfg.plotting.extensions:
-        path = output_path.joinpath(f"foo_{m:.6f}_{p:.6f}_{cfg.plotting.context}_{suffix}.{ext}")
-        fig.savefig(path)
-        logger.info(f"File saved to '{path}' successfully!")
+    # for ext in cfg.plotting.extensions:
+    #     path = output_path.joinpath(f"foo_{m:.6f}_{p:.6f}_{cfg.plotting.context}_{suffix}.{ext}")
+    #     fig.savefig(path)
+    #     logger.info(f"File saved to '{path}' successfully!")
 
-    plt.clf()
+    # plt.clf()
 
-    fig, ax = plt.subplots()
+    # fig, ax = plt.subplots()
 
-    sns.scatterplot(x='CD', y='CL',
-                    hue='alpha', palette='crest',
-                    # units='name', estimator=None,
-                    # sort=False, 
-                    data=data, ax=ax)
+    # sns.scatterplot(x='CD', y='CL',
+    #                 hue='alpha', palette='crest',
+    #                 # units='name', estimator=None,
+    #                 # sort=False, 
+    #                 data=data, ax=ax)
 
-    plt.tight_layout()
+    # plt.tight_layout()
 
-    for ext in cfg.plotting.extensions:
-        path = output_path.joinpath(f"test_{m:.6f}_{p:.6f}_{cfg.plotting.context}_{suffix}.{ext}")
-        fig.savefig(path)
-        logger.info(f"File saved to '{path}' successfully!")
+    # for ext in cfg.plotting.extensions:
+    #     path = output_path.joinpath(f"test_{m:.6f}_{p:.6f}_{cfg.plotting.context}_{suffix}.{ext}")
+    #     fig.savefig(path)
+    #     logger.info(f"File saved to '{path}' successfully!")
 
-    plt.clf()
+    # plt.clf()
 
     # coords = np.hstack([x, y]).T
 

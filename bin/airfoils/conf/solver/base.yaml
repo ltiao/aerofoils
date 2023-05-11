@@ -1,6 +1,6 @@
 mach:
 reynolds:
 normalize: false
-max_iter: 100
-max_retries: 3
-timeout: 5
+max_iter: 200
+max_retries: 5
+timeout: 3
