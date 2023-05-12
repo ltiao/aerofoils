@@ -1,22 +1,31 @@
 defaults:
+  - angle: base
   - foil: base
   - solver: base
   - plotting: web
   - _self_
 
-alpha_start: 0.
-alpha_end: 10.
-alpha_step: .1
+skip_if_exists: false
+seed: 42
 
 hydra:
   sweeper:
     params:
       foil.m: range(0.02,0.08,0.02)
+      foil.p: 0.2,0.3
       foil.t: range(0.1,0.2,0.05)
   sweep:
-    dir: multirun/${hydra.job.name}
-    subdir: ${hydra.job.override_dirname}/
+    dir: multirun/${hydra.job.override_dirname}
+    subdir: m=${foil.m},p=${foil.p},t=${foil.t}
   run:
-    dir: outputs/${hydra.job.name}/${hydra.job.override_dirname}
+    dir: outputs/${hydra.job.override_dirname}/m=${foil.m},p=${foil.p},t=${foil.t}
   job:
     chdir: True
+    config:
+      override_dirname:
+        exclude_keys:
+          - foil.m
+          - foil.p
+          - foil.t
+          - skip_if_exists
+          - seed

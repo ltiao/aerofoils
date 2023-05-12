@@ -44,18 +44,26 @@ def setup_aesthetic(width, height, aspect, dpi, transparent, use_tex, context,
 def plot(cfg: DictConfig) -> None:
 
     original_path = Path(get_original_cwd())
-    # memory = Memory(original_path.joinpath('cachedir'))
-    memory = Memory('cachedir')
 
     output_path = Path.cwd()
+    memory = Memory(output_path.parent.joinpath('cachedir'))
+    # memory = Memory(original_path.joinpath('cachedir'))
 
-    width, height = setup_aesthetic(cfg.plotting.width, cfg.plotting.get('height', cfg.plotting.width / cfg.plotting.aspect), cfg.plotting.aspect, cfg.plotting.dpi, cfg.plotting.transparent, cfg.plotting.use_tex, cfg.plotting.context, cfg.plotting.style, cfg.plotting.palette)
+    width, height = setup_aesthetic(
+        cfg.plotting.width, 
+        cfg.plotting.get('height', cfg.plotting.width / cfg.plotting.aspect), 
+        cfg.plotting.aspect, cfg.plotting.dpi, cfg.plotting.transparent, 
+        cfg.plotting.use_tex, cfg.plotting.context, cfg.plotting.style, 
+        cfg.plotting.palette)
     suffix = f"{width*cfg.plotting.dpi:.0f}x{height*cfg.plotting.dpi:.0f}"
-    logger.info(f"original path: {original_path}, output path: {output_path}, suffix: {suffix}")
+    logger.debug(f"original path: {original_path}, output path: {output_path}, suffix: {suffix}")
 
-    if Path('result.csv').exists():
-        logger.info("Already processed, skipping...")
-        return
+    if Path('result.parquet.gzip').exists():
+        if cfg.skip_if_exists:
+            logger.info("Already processed, skipping...")
+            return
+        else:
+            logger.info("Already processed, re-running...")
 
     # frames = []
     # for t in np.linspace(0.05, 0.25, 3):
@@ -78,9 +86,9 @@ def plot(cfg: DictConfig) -> None:
 
         with foil(mach=cfg.solver.mach, reynolds=cfg.solver.reynolds, 
                   normalize=cfg.solver.normalize, max_iter=cfg.solver.max_iter,
-                  max_retries=cfg.solver.max_retries, timeout=cfg.solver.timeout) as foo:
+                  max_retries=cfg.solver.max_retries, timeout=cfg.solver.timeout) as solver:
 
-            new_coords = foo.repanel(cfg.foil.trg_resolution)
+            new_coords = solver.repanel(cfg.foil.trg_resolution)
 
             # fig, ax = plt.subplots()
 
@@ -105,7 +113,7 @@ def plot(cfg: DictConfig) -> None:
 
             # plt.clf()
 
-            frame, metadata, failures = foo.calculate(slice(cfg.alpha_start, cfg.alpha_end, cfg.alpha_step))
+            frame, metadata, failures = solver.calculate(slice(cfg.angle.start, cfg.angle.end, cfg.angle.step))
 
         logger.info(foil.coords.shape)
         logger.info(new_coords.shape)
@@ -123,7 +131,8 @@ def plot(cfg: DictConfig) -> None:
     # X[:, 0] = m_start + (m_end - m_start) * U[:, 0]
     # X[:, 1] = p_start + (p_end - p_start) * U[:, 1]
 
-    logger.info(f"Mach: {cfg.solver.mach}, "
+    logger.info("Solver conditions - "
+                f"Mach: {cfg.solver.mach}, "
                 f"Re: {cfg.solver.reynolds}, "
                 f"normalize: {cfg.solver.normalize}, "
                 f"max. iterations: {cfg.solver.max_iter}, "
@@ -145,7 +154,7 @@ def plot(cfg: DictConfig) -> None:
     # frames = []
     # for (m, p, t) in tqdm(X):
 
-    logger.info(f"m={cfg.foil.m:.2f}; p={cfg.foil.p:.2f}; t={cfg.foil.t:.2f}")
+    logger.info(f"NACA 4-digits: {cfg.foil.m*100:.2f} {cfg.foil.p*10:.2f} {cfg.foil.t*100:.2f}")
 
     # frame, metadata, failures = compute(m, p, t)
     frame, metadata, failures = compute(cfg.foil.m, cfg.foil.p, cfg.foil.t)
